@@ -12,3 +12,4 @@ A Next.js AI-powered fitness app skeleton.
 Fill in your API keys and add real content to replace placeholders.
 "# Atlas" 
 "# Atlas" 
+"# Atlas" 
