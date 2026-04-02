@@ -14,9 +14,7 @@
     "resolveJsonModule": true
   },
   "include": [
-    "src/**/*",
-    "server/src/index.ts",
-    "server/src/routes/chat.ts"
+    "src/**/*"
   ],
   "exclude": [
     "node_modules",

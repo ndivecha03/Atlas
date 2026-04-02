@@ -2,6 +2,13 @@ import { supabase } from './supabase';
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL ?? 'http://localhost:3001';
 
+async function authHeaders(): Promise<HeadersInit> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error('Not authenticated');
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+}
+
 export interface ChatAction {
   type:        string;
   title:       string;
@@ -22,9 +29,9 @@ export async function sendMessage(
   userId: string,
   message: string,
 ): Promise<{ message: string; action: ChatAction | null }> {
-  const res = await fetch(`${SERVER_URL}/chat`, {
+  const res = await fetch(`${SERVER_URL}/api/chat`, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await authHeaders(),
     body:    JSON.stringify({ userId, message }),
   });
   if (!res.ok) throw new Error(`Server error: ${res.status}`);
@@ -37,9 +44,9 @@ export async function resolveAction(
   status:    'accepted' | 'declined',
   action:    ChatAction,
 ): Promise<void> {
-  const res = await fetch(`${SERVER_URL}/chat/action`, {
+  const res = await fetch(`${SERVER_URL}/api/chat/action`, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await authHeaders(),
     body:    JSON.stringify({ userId, messageId, status, action }),
   });
   if (!res.ok) throw new Error(`Server error: ${res.status}`);

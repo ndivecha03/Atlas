@@ -1,17 +1,22 @@
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
-
-const SUPABASE_URL        = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const ANTHROPIC_API_KEY   = process.env.ANTHROPIC_API_KEY;
-
-const express             = require('express');
-const Anthropic           = require('@anthropic-ai/sdk').default;
-const { createClient }    = require('@supabase/supabase-js');
+const express          = require('express');
+const Anthropic        = require('@anthropic-ai/sdk').default;
+const { createClient } = require('@supabase/supabase-js');
 
 const router    = express.Router();
-const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
-const supabase  = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const supabase  = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+const VALID_ACTION_TYPES = new Set(['UPDATE_PLAN', 'UPDATE_GOAL', 'ADD_NOTE', 'SWAP_EXERCISE', 'SCHEDULE_REST']);
+const MAX_MESSAGE_LENGTH = 2000;
+
+async function requireAuth(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) return res.status(401).json({ error: 'Unauthorized' });
+  req.authUserId = user.id;
+  next();
+}
 
 function buildSystemPrompt(ctx) {
   return `You are Atlas, a world-class AI personal trainer coaching ${ctx.name}, a ${ctx.age}-year-old ${ctx.genderIdentity} who trains ${ctx.trainingType} at ${ctx.experienceLevel} level. Their primary goal is ${ctx.primaryGoal}.
@@ -108,9 +113,12 @@ async function loadUserContext(userId) {
   };
 }
 
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   const { userId, message } = req.body;
   if (!userId || !message) return res.status(400).json({ error: 'userId and message are required' });
+  if (userId !== req.authUserId) return res.status(403).json({ error: 'Forbidden' });
+  if (typeof message !== 'string' || message.trim().length === 0) return res.status(400).json({ error: 'message must be a non-empty string' });
+  if (message.length > MAX_MESSAGE_LENGTH) return res.status(400).json({ error: `message must be under ${MAX_MESSAGE_LENGTH} characters` });
   try {
     const [userContext, history] = await Promise.all([
       loadUserContext(userId),
@@ -134,9 +142,12 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.post('/action', async (req, res) => {
+router.post('/action', requireAuth, async (req, res) => {
   const { userId, messageId, status, action } = req.body;
   if (!userId || !status || !action) return res.status(400).json({ error: 'Missing required fields' });
+  if (userId !== req.authUserId) return res.status(403).json({ error: 'Forbidden' });
+  if (!['accepted', 'declined'].includes(status)) return res.status(400).json({ error: 'status must be accepted or declined' });
+  if (action.type && !VALID_ACTION_TYPES.has(action.type)) return res.status(400).json({ error: 'Invalid action type' });
   try {
     if (status === 'accepted') {
       if (action.type === 'ADD_NOTE' || action.type === 'SCHEDULE_REST') {
